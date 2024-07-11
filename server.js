@@ -1,56 +1,64 @@
-const TelegramBot = require('node-telegram-bot-api');
-const mongoose = require('mongoose');
-const cron = require('node-cron');
-const User = require('./Models/user');
-const Task = require('./Models/task'); // Ensure this model is defined correctly
-require('dotenv').config();
+// Import required modules
+const TelegramBot = require('node-telegram-bot-api'); // For interacting with Telegram
+const mongoose = require('mongoose'); // For interacting with MongoDB
+const cron = require('node-cron'); // For scheduling tasks
+const User = require('./Models/user'); // User model (ensure it's defined correctly)
+const Task = require('./Models/task'); // Task model (ensure it's defined correctly)
+require('dotenv').config(); // Load environment variables
 
-const token = process.env.TELEGRAM_BOT_TOKEN || "7304801715:AAHiRprM3NPh-aOtF6GT8dQvEwWQAE46_V0";
-const mongoURI = process.env.MONGO_URI || "mongodb+srv://alambinary011:telegrambot@cluster0.wmezsvf.mongodb.net/";
+// Set up the bot token and MongoDB URI
+const token = process.env.TELEGRAM_BOT_TOKEN || "YOUR_TELEGRAM_BOT_TOKEN_HERE";
+const mongoURI = process.env.MONGO_URI || "YOUR_MONGO_URI_HERE";
 
 // Connect to MongoDB
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => {
+  .then(() => console.log('MongoDB connected')) // If connection is successful
+  .catch(err => { // If there's an error
     console.error('MongoDB connection error:', err);
-    process.exit(1);
+    process.exit(1); // Exit the process with an error
   });
 
+// Function to start the bot
 const startBot = () => {
+  // Create a new Telegram bot instance
   const bot = new TelegramBot(token, { polling: true });
 
+  // Handle polling errors
   bot.on('polling_error', (error) => {
     console.error('Polling error:', error.code);
     console.error('Polling error details:', error);
 
+    // If a fatal error occurs, restart polling
     if (error.code === 'EFATAL') {
       console.error('Fatal error occurred. Restarting polling...');
       bot.stopPolling();
       setTimeout(() => {
         console.log('Restarting polling...');
         bot.startPolling();
-      }, 10000);
+      }, 10000); // Wait for 10 seconds before restarting
     }
   });
 
-  // Listen for /start command
+  // Listen for /start command to welcome users
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, `Ready to conquer your tasks? Let's get started!`);
   });
 
-  // Listen for /register command
+  // Listen for /register command to register users
   bot.onText(/\/register/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const username = msg.from.username;
 
     try {
+      // Check if user is already registered
       let user = await User.findOne({ userId });
 
       if (user) {
         bot.sendMessage(chatId, 'You are already registered.');
       } else {
+        // Register new user
         user = new User({ userId, username });
         await user.save();
         bot.sendMessage(chatId, 'Registration successful!');
@@ -67,10 +75,11 @@ const startBot = () => {
     const userId = msg.from.id;
 
     try {
+      // Check if user exists in the database
       const user = await User.findOne({ userId });
 
       if (user) {
-        callback();
+        callback(); // If user is authenticated, execute the callback function
       } else {
         bot.sendMessage(chatId, 'You need to register first. Use /register.');
       }
@@ -80,7 +89,7 @@ const startBot = () => {
     }
   };
 
-  // Create Task
+  // Listen for /create_task command to create tasks
   bot.onText(/\/create_task (\d+) (.+) (.+)/, (msg, match) => {
     isAuthenticated(msg, async () => {
       const chatId = msg.chat.id;
@@ -96,6 +105,7 @@ const startBot = () => {
         return;
       }
 
+      // Create a new task
       const task = new Task({ userId, taskID, description, due_date: dueDate });
 
       try {
@@ -108,7 +118,7 @@ const startBot = () => {
     });
   });
 
-  // Update Task
+  // Listen for /update_task command to update tasks
   bot.onText(/\/update_task (\d+) (.+) (.+)/, (msg, match) => {
     isAuthenticated(msg, async () => {
       const chatId = msg.chat.id;
@@ -117,6 +127,7 @@ const startBot = () => {
       const newDueDate = new Date(match[3]);
 
       try {
+        // Update the task
         const task = await Task.findOneAndUpdate({ taskID }, { description: newDescription, due_date: newDueDate }, { new: true });
 
         if (task) {
@@ -131,13 +142,14 @@ const startBot = () => {
     });
   });
 
-  // Delete Task
+  // Listen for /delete_task command to delete tasks
   bot.onText(/\/delete_task (\d+)/, (msg, match) => {
     isAuthenticated(msg, async () => {
       const chatId = msg.chat.id;
       const taskID = parseInt(match[1]);
 
       try {
+        // Delete the task
         const task = await Task.findOneAndDelete({ taskID });
 
         if (task) {
@@ -152,16 +164,18 @@ const startBot = () => {
     });
   });
 
-  // List Tasks
+  // Listen for /list_tasks command to list all tasks for a user
   bot.onText(/\/list_tasks/, (msg) => {
     isAuthenticated(msg, async () => {
       const chatId = msg.chat.id;
       const userId = msg.from.id;
 
       try {
+        // Find all tasks for the user
         const tasks = await Task.find({ userId });
 
         if (tasks.length > 0) {
+          // Format the task list
           const taskList = tasks.map(task => `ID: ${task.taskID}, Description: ${task.description}, Due Date: ${task.due_date}`).join('\n');
           bot.sendMessage(chatId, `Your tasks:\n${taskList}`);
         } else {
@@ -174,9 +188,9 @@ const startBot = () => {
     });
   });
 
-  // Schedule reminders
+  // Schedule reminders for tasks
   const scheduleReminders = () => {
-    cron.schedule('*/1 * * * *', async () => { // Check every 1 minute
+    cron.schedule('*/20 * * * *', async () => { // Check every 20 minute
       const tasks = await Task.find({});
       const now = new Date();
       tasks.forEach(async (task) => {
@@ -194,7 +208,8 @@ const startBot = () => {
     });
   };
 
-  // Schedule daily summary
+  // Schedule daily summary of tasks
+
   const scheduleDailySummary = () => {
     cron.schedule('0 0 * * *', async () => { // Every day at midnight
       const users = await User.find({});

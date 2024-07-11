@@ -1,4 +1,4 @@
-[Telegram Testing Video.webm](https://github.com/AlamBinary01/Telegram-Bot/assets/86626270/1ba3b83d-df65-4498-9352-dcb022d5088a)# Telegram Task Management Bot
+# Telegram Task Management Bot
 
 This bot helps users manage their tasks using Telegram. It connects to MongoDB to store user and task information and provides reminders and daily summaries.
 
